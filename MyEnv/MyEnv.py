@@ -31,8 +31,8 @@ class MyEnv(gym.Env):
         self.last_grid = [0, 0]
 
         self.tree_radius_range = (0.25, 0.55)
-        self.trees_per_grid = 15
-        self.trees_min_distance = 1.5
+        self.trees_per_grid = 13
+        self.trees_min_distance = 1.2
 
         self.world_size_in_grids = np.array([-2, 4, -2, 2])
         self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
@@ -193,8 +193,12 @@ class MyEnv(gym.Env):
                                 near_grid_trees = np.concatenate((near_grid_trees, self.trees_array[m, n]))
 
                 near_grid_trees = near_grid_trees[~np.all(near_grid_trees == 0, axis=1)]
-
+                tries = 0
                 while len(accepted_trees) < self.trees_per_grid:
+                    if tries > 1000:
+                        print("Cant create all trees")
+                        break
+                    tries += 1
                     p1 = random.uniform(-self.grid_size_half, self.grid_size_half) + (
                             i - self.mid_grid[0]) * self.grid_size
                     p2 = random.uniform(-self.grid_size_half, self.grid_size_half) + (
