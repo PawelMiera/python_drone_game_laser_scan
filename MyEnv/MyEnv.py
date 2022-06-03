@@ -9,14 +9,17 @@ from gym import spaces
 
 
 class MyEnv(gym.Env):
-    def __init__(self, render, step_time):
+    def __init__(self, render, step_time, test=False):
 
         super(MyEnv, self).__init__()
 
         """""""""""sim"""""""""""
         self.do_render = render
         self.step_time = step_time
-        self.drone = DroneState(max_speed=3, max_acc_x=10.5, max_acc_y=10.5, step_time=step_time)
+        self.test = test
+
+        self.drone = DroneState(max_speed=1.5, max_acc_x=6.5, max_acc_y=6.5, step_time=step_time)
+
         self.window_size = (1000, 1000)
         self.window_size_half = (int(self.window_size[0] / 2), int(self.window_size[1] / 2))
         self.pixels_per_meter = 100
@@ -27,9 +30,9 @@ class MyEnv(gym.Env):
         self.current_grid = [0, 0]
         self.last_grid = [0, 0]
 
-        self.tree_radius_range = (0.2, 0.65)
-        self.trees_per_grid = 20
-        self.trees_min_distance = 0.8
+        self.tree_radius_range = (0.25, 0.55)
+        self.trees_per_grid = 15
+        self.trees_min_distance = 1.5
 
         self.world_size_in_grids = np.array([-2, 4, -2, 2])
         self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
@@ -53,7 +56,7 @@ class MyEnv(gym.Env):
         """""""""""laser"""""""""""
 
         self.laser_max_range = 5.0
-        self.laser_resolution = 360
+        self.laser_resolution = 100
         self.laser_angle_per_step = 2 * pi / self.laser_resolution
 
         self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range)
@@ -252,7 +255,8 @@ class MyEnv(gym.Env):
         self.last_grid = self.current_grid
 
         if done:
-            #self.reset()
+            if self.test:
+                self.reset()
             reward = c_reward
 
         return obs, reward, done, {}
@@ -261,12 +265,13 @@ class MyEnv(gym.Env):
         return ((self.laser_ranges.copy() - 2.5) * 0.4).astype(np.float32)
 
     def computeReward(self):
-        dist_margin = 0.2
+        dist_margin = 0.5
         colision_reward = 0
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
-                colision_reward = -0.2
+
+                colision_reward = -1.2
                 break
 
         speed_reward = 0.2 * self.drone.speed[0]
