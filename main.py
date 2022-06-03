@@ -6,9 +6,9 @@ from inputs import get_gamepad
 import threading
 import math
 import numpy as np
-from stable_baselines3.common.env_checker import check_env
-
-from stable_baselines3 import PPO
+# from stable_baselines3.common.env_checker import check_env
+#
+# from stable_baselines3 import PPO
 
 class ManualControl:
     def __init__(self):
@@ -23,9 +23,12 @@ class ManualControl:
 
     def main(self):
         env = MyEnv(render=True, step_time=0.02)
+        start = time.time()
         while True:
+
             env.step([self.x, self.y])
-            print(env.drone)
+            #print(env.drone)
+            #print(time.time() - start)
             #print(self.calculate_distance(np.array([-1, -1]), 1, 0.173533))
 
     def control_thread(self):
@@ -40,17 +43,15 @@ class ManualControl:
 
 
 if __name__ == '__main__':
-    #con = ManualControl()
-    env = MyEnv(render=False, step_time=0.02)
-
-    model = PPO('MlpPolicy', env, verbose=1)
-    model.learn(total_timesteps=25_000)
-
-    log_dir = "/tmp/"
-    model.save(log_dir + "ppo_halfcheetah")
-
-    obs = env.reset()
-    for _ in range(1000):
-        action, _states = model.predict(obs)
-        obs, rewards, dones, info = env.step(action)
-        env.render()
+    con = ManualControl()
+    # env = MyEnv(render=False, step_time=0.02)
+    # #
+    # model = PPO('MlpPolicy', env, verbose=1)
+    # model.learn(total_timesteps=100_000)
+    #
+    #
+    # obs = env.reset()
+    # for _ in range(1000):
+    #     action, _states = model.predict(obs)
+    #     obs, rewards, dones, info = env.step(action)
+    #     env.render()

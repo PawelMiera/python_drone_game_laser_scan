@@ -1,13 +1,12 @@
-from math import sqrt, pi, atan2, sin, cos, copysign, tan
+from math import sqrt, pi, sin, cos
 
 from DroneState.DroneState import DroneState
-from Tree.Tree import Tree
 import numpy as np
 import cv2
-import time
 import random
 import gym
 from gym import spaces
+
 
 class MyEnv(gym.Env):
     def __init__(self, render, step_time):
@@ -15,15 +14,12 @@ class MyEnv(gym.Env):
         super(MyEnv, self).__init__()
 
         """""""""""sim"""""""""""
-        self.last_time = time.time()
         self.do_render = render
         self.step_time = step_time
-        self.drone = DroneState(max_speed=3, acc_x=1.5, acc_y=10.5, step_time=step_time)
+        self.drone = DroneState(max_speed=3, max_acc_x=10.5, max_acc_y=10.5, step_time=step_time)
         self.window_size = (1000, 1000)
         self.window_size_half = (int(self.window_size[0] / 2), int(self.window_size[1] / 2))
         self.pixels_per_meter = 100
-
-
 
         """""""""""grids"""""""""""
         self.grid_size = 10
@@ -35,32 +31,210 @@ class MyEnv(gym.Env):
         self.trees_per_grid = 20
         self.trees_min_distance = 0.8
 
-        self.trees = {}
-        self.closest_trees = []
+        self.world_size_in_grids = np.array([-2, 4, -2, 2])
+        self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
+        self.trees_array = np.zeros(
+            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
+             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid, 3),
+            dtype=np.float32)
+        self.trees_array_r = np.zeros(
+            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
+             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid),
+            dtype=np.float32)
+
+        self.current_grid = [-self.world_size_in_grids[0], -self.world_size_in_grids[2]]
+        self.mid_grid = self.current_grid.copy()
+        self.last_grid = self.current_grid.copy()
+
+        self.closest_trees = np.array([]).reshape(0, 3)
+        self.closest_distance = np.array([]).reshape(0, 1)
+        self.near_grid_trees = np.array([]).reshape(0, 3).astype(np.float32)
 
         """""""""""laser"""""""""""
 
         self.laser_max_range = 5.0
-        self.laser_resolution = 315
+        self.laser_resolution = 360
         self.laser_angle_per_step = 2 * pi / self.laser_resolution
 
         self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range)
 
+        angles = []
+        self.pi_2_positions = []
+        for i in range(self.laser_resolution):
+            val = round(i * self.laser_angle_per_step, 10)
+            angles.append(val)
+            pi1 = round(pi / 2, 10)
+            pi2 = round(3 * pi / 2, 10)
+            if val == pi1 or val == pi2:
+                self.pi_2_positions.append(i)
+
+        self.laser_angles = np.array(angles).astype(np.float32)
+        self.laser_angles_sin = np.sin(self.laser_angles)
+        self.laser_angles_cos = np.cos(self.laser_angles)
+        self.laser_tangents = np.tan(self.laser_angles)
+        self.laser_tangents_2 = np.multiply(self.laser_tangents, 2)
+        self.a_q = np.add(np.square(self.laser_tangents), 1)
+        self.a_q_2 = np.multiply(self.a_q, 2)
+
         self.generate_new_trees()
+        self.update_near_trees()
 
         self.action_space = spaces.Box(low=-1, high=1, shape=([2]), dtype=np.float32)
         self.observation_space = spaces.Box(low=-1, high=1, shape=([self.laser_resolution]), dtype=np.float32)
 
+        self.current_step = 0
+
+    def are_angles_not_between(self, angles_sin, angles_cos, max_sin, max_cos, min_sin, min_cos):
+
+        s1 = np.sign(np.multiply(min_cos, angles_sin) - np.multiply(min_sin, angles_cos))
+        s2 = np.sign(np.multiply(angles_cos, max_sin) - np.multiply(angles_sin, max_cos))
+        s3 = np.stack([np.sign(np.multiply(min_cos, max_sin) - np.multiply(min_sin, max_cos))] * self.laser_resolution)
+
+        return np.logical_not(np.logical_and((s1 == s2), (s2 == s3)))
+
+    def calculate_laser_distances(self):
+        self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range)
+
+        trees_relative_pos = self.closest_trees[:, :2] - self.drone.pos
+        trees_minus_relative_pos = -trees_relative_pos
+        tree_angle_direction = np.arctan2(trees_relative_pos[:, 1], trees_relative_pos[:, 0])
+
+        angle_direction_max = np.subtract(tree_angle_direction, pi / 4)
+        angle_direction_min = np.add(tree_angle_direction, pi / 4)
+
+        sin_max = np.sin(angle_direction_max)
+        cos_max = np.cos(angle_direction_max)
+        sin_min = np.sin(angle_direction_min)
+        cos_min = np.cos(angle_direction_min)
+
+        if len(self.closest_trees) > 0:
+            all_laser_sin = np.stack([self.laser_angles_sin] * len(tree_angle_direction), axis=1)
+            all_laser_cos = np.stack([self.laser_angles_cos] * len(tree_angle_direction), axis=1)
+
+            angles_result = self.are_angles_not_between(all_laser_sin, all_laser_cos, sin_max, cos_max, sin_min, cos_min)
+
+            trees_r2 = np.square(self.closest_trees[:, 2])
+
+        for i in range(len(self.closest_trees)):
+            if self.closest_distance[i] > self.closest_trees[i, 2]:
+                available_laser_tangents = self.laser_tangents.copy()
+                available_laser_tangents[angles_result[:, i]] = np.nan
+                b_l = trees_minus_relative_pos[i, 1] - (trees_minus_relative_pos[i, 0] * available_laser_tangents)
+                b2_l = np.square(b_l)
+
+                b_q = np.multiply(self.laser_tangents_2, b_l)
+                c_q = b2_l - trees_r2[i]
+
+                d = np.square(b_q) - np.multiply(self.a_q * c_q, 4)
+
+                sqrt_d = np.sqrt(d)
+
+                x1 = (- b_q - sqrt_d) / self.a_q_2
+                x2 = (- b_q + sqrt_d) / self.a_q_2
+
+                y1 = self.laser_tangents * x1 + b_l
+                y2 = self.laser_tangents * x2 + b_l
+
+                p1 = np.stack((x1, y1), axis=1)
+                p2 = np.stack((x2, y2), axis=1)
+
+                dist_array_1 = np.sqrt(np.sum(np.square(p1 - trees_minus_relative_pos[i, :2]), axis=1))
+                dist_array_2 = np.sqrt(np.sum(np.square(p2 - trees_minus_relative_pos[i, :2]), axis=1))
+                for p in self.pi_2_positions:
+                    if not np.isnan(available_laser_tangents[p]):
+                        try:
+                            y = sqrt(trees_r2[i] - trees_minus_relative_pos[i, 0] * trees_minus_relative_pos[i, 0])
+                            d = min(abs(trees_minus_relative_pos[i, 1] - y), abs(trees_minus_relative_pos[i, 1] + y))
+                            dist_array_1[p] = d
+                            dist_array_2[p] = d
+                        except ValueError:
+                            dist_array_1[p] = self.laser_max_range
+                            dist_array_2[p] = self.laser_max_range
+
+                min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=self.laser_max_range)
+                self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
+            else:
+                self.laser_ranges = np.full(self.laser_resolution, 0)
+                break
+
+    def update_near_trees(self):
+        self.near_grid_trees = np.array([]).reshape(0, 3).astype(np.float32)
+        for m in range(self.current_grid[0] - 1, self.current_grid[0] + 2):
+            for n in range(self.current_grid[1] - 1, self.current_grid[1] + 2):
+                if 0 <= m < self.trees_array.shape[0] and 0 <= n < self.trees_array.shape[1]:
+                    self.near_grid_trees = np.concatenate((self.near_grid_trees, self.trees_array[m, n]))
+
+    def get_closest_trees(self):
+        self.closest_trees = np.array([]).reshape(0, 3).astype(np.float32)
+        self.closest_distance = np.array([]).reshape(0, 3).astype(np.float32)
+
+        if len(self.near_grid_trees > 0):
+            near_grid_trees_points = self.near_grid_trees[:, :2].copy()
+            near_grid_trees_radius = self.near_grid_trees[:, 2].copy()
+            dist_array = np.sqrt(np.sum(np.square(near_grid_trees_points - self.drone.pos), axis=1))
+            close_array = np.subtract(dist_array - near_grid_trees_radius, self.laser_max_range)
+
+            near_trees = self.near_grid_trees[close_array < 0]
+            self.closest_distance = dist_array[close_array < 0]
+            self.closest_trees = near_trees
+
+    def generate_new_trees(self):
+        for i in range(self.trees_array.shape[0]):
+            for j in range(self.trees_array.shape[1]):
+                accepted_trees = []
+                near_grid_trees = np.array([]).reshape(0, 3)
+                for m in range(i - 1, i + 2):
+                    for n in range(j - 1, j + 2):
+                        if not (m == i and n == j):
+                            if 0 <= m < self.trees_array.shape[0] and 0 <= n < self.trees_array.shape[1]:
+                                near_grid_trees = np.concatenate((near_grid_trees, self.trees_array[m, n]))
+
+                near_grid_trees = near_grid_trees[~np.all(near_grid_trees == 0, axis=1)]
+
+                while len(accepted_trees) < self.trees_per_grid:
+                    p1 = random.uniform(-self.grid_size_half, self.grid_size_half) + (
+                            i - self.mid_grid[0]) * self.grid_size
+                    p2 = random.uniform(-self.grid_size_half, self.grid_size_half) + (
+                            j - self.mid_grid[1]) * self.grid_size
+                    radius = random.uniform(self.tree_radius_range[0], self.tree_radius_range[1])
+
+                    current_tree = np.array([p1, p2, radius])
+
+                    if self.calculate_distance(current_tree[:2], np.array([0, 0])) < 2.5:
+                        continue
+
+                    accepted_array = np.array(accepted_trees)
+                    if len(accepted_array > 0):
+                        accepted_points = accepted_array[:, :2].copy()
+                        accepted_radius = accepted_array[:, 2].copy()
+                        dist_array = np.sqrt(np.sum(np.square(accepted_points - current_tree[:2]), axis=1))
+                        close_array = np.subtract(dist_array - accepted_radius, radius + self.trees_min_distance)
+
+                        if np.any(close_array < 0):
+                            continue
+
+                    if len(near_grid_trees > 0):
+                        near_grid_trees_points = near_grid_trees[:, :2].copy()
+                        near_grid_trees_radius = near_grid_trees[:, 2].copy()
+                        dist_array = np.sqrt(np.sum(np.square(near_grid_trees_points - current_tree[:2]), axis=1))
+                        close_array = np.subtract(dist_array - near_grid_trees_radius, radius + self.trees_min_distance)
+
+                        if np.any(close_array < 0):
+                            continue
+
+                    accepted_trees.append(current_tree)
+
+                self.trees_array[i, j] = np.array(accepted_trees)
+
     def step(self, actions):
-        now = time.time()
-        # print("Act ", actions)
-        # print(now - self.last_time)
-        self.last_time = now
+        self.current_step += 1
+
         self.drone.make_step(actions)
-        self.current_grid = [int(self.drone.pos[0] / self.grid_size), int(self.drone.pos[1] / self.grid_size)]
+        self.current_grid = [int(self.drone.pos[0] / self.grid_size + self.mid_grid[0]),
+                             int(self.drone.pos[1] / self.grid_size + self.mid_grid[1])]
 
         if self.current_grid != self.last_grid:
-            self.generate_new_trees()
+            self.update_near_trees()
 
         self.get_closest_trees()
 
@@ -70,15 +244,16 @@ class MyEnv(gym.Env):
 
         reward = self.computeReward()
 
-        done = self.isDone()
-
-        if self.isDone():
-            reward = 1
+        done, c_reward = self.isDone()
 
         if self.do_render:
             self.render()
 
         self.last_grid = self.current_grid
+
+        if done:
+            #self.reset()
+            reward = c_reward
 
         return obs, reward, done, {}
 
@@ -86,179 +261,79 @@ class MyEnv(gym.Env):
         return ((self.laser_ranges.copy() - 2.5) * 0.4).astype(np.float32)
 
     def computeReward(self):
-        reward = 0
-        dist_margin = 0.1
-
+        dist_margin = 0.2
+        colision_reward = 0
         for tree in self.closest_trees:
-            dist = tree.distance(self.drone.pos)
-            if dist - tree.r - dist_margin < 0:
-                reward += -0.2
+            dist = self.calculate_distance(self.drone.pos, tree[:2])
+            if dist - tree[2] - dist_margin < 0:
+                colision_reward = -0.2
+                break
 
-        reward += 0.01 * self.drone.speed_x
+        speed_reward = 0.2 * self.drone.speed[0]
+
+        if speed_reward < 0:
+            speed_reward *= 3
+
+        reward = colision_reward + speed_reward
 
         return reward
 
     def reset(self):
-        self.trees.clear()
-        self.drone.pos = np.array([0, 0]).astype(np.float32)
-        self.current_grid = [0, 0]
-        self.last_grid = [0, 0]
+        self.drone.reset()
+        self.current_grid = [-self.world_size_in_grids[0], -self.world_size_in_grids[2]]
+        self.last_grid = self.current_grid.copy()
+        self.trees_array = np.zeros(
+            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
+             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid, 3),
+            dtype=np.float32)
+        self.trees_array_r = np.zeros(
+            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
+             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid),
+            dtype=np.float32)
+
+        self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range)
+
         self.generate_new_trees()
+
+        self.update_near_trees()
+
+        self.get_closest_trees()
+
+        self.calculate_laser_distances()
+
+        self.current_step = 0
 
         return self.get_obs()
 
     def isDone(self):
-        if self.drone.pos[0] > 100:
-            return True
-        return False
+        if self.drone.pos[0] > self.world_size[1]:
+            return True, 10
+
+        if self.drone.pos[0] < self.world_size[0] or self.drone.pos[1] < self.world_size[2] or self.drone.pos[1] > \
+                self.world_size[3]:
+            return True, -10
+
+        if self.step_time * self.current_step > 30:
+            return True, -10
+        return False, 0
 
     def close(self):
         raise NotImplementedError
 
-    def calculate_laser_distances(self):
-        for a in range(self.laser_resolution):
-            angle = a * self.laser_angle_per_step
-            dist = 5.0
-            for tree in self.closest_trees:
-                dist_to_drone = tree.distance(self.drone.pos)
-                if dist_to_drone - tree.r < self.laser_max_range and dist_to_drone > tree.r:
-                    current_dist = self.calculate_one_laser_distance(-(tree.p - self.drone.pos), tree.r,
-                                                                     angle)
-
-                    dist = min(dist, current_dist)
-
-            self.laser_ranges[a] = dist
-
-    def angle_in_range(self, angle, first, second):
-        return (
-                self.sign(self.cross_product(first, angle)) ==
-                self.sign(self.cross_product(angle, second)) ==
-                self.sign(self.cross_product(first, second))
-        )
-
-    def cross_product(self, first, second):
-        first_x = cos(first)
-        first_y = sin(first)
-
-        second_x = cos(second)
-        second_y = sin(second)
-
-        return first_x * second_y - first_y * second_x
-
-    def sign(self, x):
-        return copysign(1, x)
-
-    def calculate_one_laser_distance(self, pos, r, angle):
-
-        angle_direction = atan2(-pos[1], -pos[0])
-
-        angle_direction_max = angle_direction - pi / 4
-        angle_direction_min = angle_direction + pi / 4
-
-        dist = self.laser_max_range
-
-        if self.angle_in_range(angle, angle_direction_min, angle_direction_max):
-            a_l = tan(angle)
-            b_l = pos[1] - pos[0] * a_l
-            a2_l = a_l * a_l
-            r2 = r * r
-            b2_l = b_l * b_l
-
-            a_q = a2_l + 1
-            b_q = 2 * a_l * b_l
-            c_q = b2_l - r2
-
-            d = b_q * b_q - 4 * a_q * c_q
-
-            if d > 0:
-                x1 = (-b_q - sqrt(d)) / (2 * a_q)
-                x2 = (-b_q + sqrt(d)) / (2 * a_q)
-
-                y1 = a_l * x1 + b_l
-                y2 = a_l * x2 + b_l
-
-                dist = self.calculate_distance(np.array([x1, y1]), pos)
-
-                dist = min(dist, self.calculate_distance(np.array([x2, y2]), pos))
-
-            elif d == 0:
-                x1 = - b_q / (2 * a_q)
-                y1 = a_l * x1 + b_l
-                self.calculate_distance(np.array([x1, y1]), pos)
-
-        return dist
-
     def calculate_distance(self, p1, p2):
         return sqrt((p2[0] - p1[0]) * (p2[0] - p1[0]) + (p2[1] - p1[1]) * (p2[1] - p1[1]))
 
-    def get_closest_trees(self):
-        self.closest_trees.clear()
-
-        for i in range(self.current_grid[0] - 1, self.current_grid[0] + 1 + 1):
-            for j in range(self.current_grid[1] - 1, self.current_grid[1] + 1 + 1):
-                key = str([i, j])
-                if key in self.trees:
-                    current_closest_trees = [tree for tree in self.trees[key] if
-                                             tree.distance(self.drone.pos) - tree.r <= self.grid_size / 2]
-
-                    self.closest_trees += current_closest_trees
-
-    def generate_new_trees(self):
-        for i in range(self.current_grid[0] - 1, self.current_grid[0] + 1 + 1):
-            for j in range(self.current_grid[1] - 1, self.current_grid[1] + 1 + 1):
-                key = str([i, j])
-                if key not in self.trees:
-                    accepted_trees = []
-
-                    while len(accepted_trees) < self.trees_per_grid:
-                        pos = np.array([random.uniform(-self.grid_size_half, self.grid_size_half),
-                                        random.uniform(-self.grid_size_half, self.grid_size_half)])
-                        pos += np.array([i, j]) * self.grid_size
-                        radius = random.uniform(self.tree_radius_range[0], self.tree_radius_range[1])
-                        current_tree = Tree(pos, radius)
-                        too_close = False
-
-                        if current_tree.distance(np.array([0, 0])) < 2.5:
-                            continue
-
-                        for accepted_tree in accepted_trees:
-                            if current_tree.distance(accepted_tree.p) - current_tree.r - accepted_tree.r < \
-                                    self.trees_min_distance:
-                                too_close = True
-                                break
-
-                        if too_close:
-                            continue
-
-                        for k in range(self.current_grid[0] - 1, self.current_grid[0] + 1 + 1):
-                            for l in range(self.current_grid[1] - 1, self.current_grid[1] + 1 + 1):
-                                key1 = str([k, l])
-                                if key1 in self.trees:
-                                    existing_trees = self.trees[key1]
-
-                                    for existing_tree in existing_trees:
-                                        if current_tree.distance(existing_tree.p) - current_tree.r - existing_tree.r < \
-                                                self.trees_min_distance:
-                                            too_close = True
-                                            break
-                        if too_close:
-                            continue
-
-                        accepted_trees.append(current_tree)
-                    self.trees[key] = accepted_trees
-
     def render(self, mode='human'):
-        start_time = time.time()
         background = np.zeros((self.window_size[0], self.window_size[1], 3), np.uint8)
         background[:] = (0, 255, 0)
 
         for tree in self.closest_trees:
-            pos_diff = (tree.p - self.drone.pos) * self.pixels_per_meter
+            pos_diff = (tree[:2] - self.drone.pos) * self.pixels_per_meter
 
             pos_diff = np.array(
                 [self.window_size_half[1] + pos_diff[1], self.window_size_half[0] - pos_diff[0]]).astype(np.int)
 
-            radius = int(tree.r * self.pixels_per_meter)
+            radius = int(tree[2] * self.pixels_per_meter)
 
             cv2.circle(background, pos_diff, radius, (60, 103, 155), -1)
 
@@ -279,8 +354,3 @@ class MyEnv(gym.Env):
 
         cv2.imshow("game", background)
         cv2.waitKey(1)
-
-        # wait_time = self.step_time - (time.time() - start_time)
-        # print("wait ", wait_time)
-        # if wait_time > 0:
-        #     time.sleep(wait_time)
