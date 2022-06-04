@@ -142,7 +142,7 @@ class MyEnv(gym.Env):
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
-                colision_reward = -1.2
+                colision_reward = -1.5
                 break
 
         speed_reward = 0.2 * self.drone.speed[0]

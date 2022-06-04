@@ -8,6 +8,6 @@ policy_kwargs = dict(activation_fn=th.nn.ReLU,
                      net_arch=[dict(pi=[128, 128], vf=[256, 256])])
 
 model = PPO('MlpPolicy', env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="tensorboard")
-model.learn(total_timesteps=1_000_000)
+model.learn(total_timesteps=1_200_000)
 
-model.save("ppo7")
+model.save("ppo8")
