@@ -22,7 +22,7 @@ class ManualControl:
         self.main()
 
     def main(self):
-        env = MyEnv(render=True, step_time=0.02)
+        env = MyEnv(render=True, step_time=0.02, laser_noise=(0, 0.05))
         start = time.time()
         while True:
 

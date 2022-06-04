@@ -4,10 +4,10 @@ import torch as th
 
 env = MyEnv(render=False, step_time=0.02)
 
-model = PPO.load("ppo3")
+model = PPO.load("ppo5")
 
 model.set_env(env)
 
 model.learn(total_timesteps=500_000)
 
-model.save("ppo4")
+model.save("ppo6")
