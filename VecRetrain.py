@@ -23,15 +23,15 @@ def make_env(env_id, rank, seed=0):
 
 if __name__ == '__main__':
     env_id = "CartPole-v1"
-    num_cpu = 30  # Number of processes to use
+    num_cpu = 40  # Number of processes to use
     # Create the vectorized environment
     envs = [make_env(env_id, i) for i in range(num_cpu)]
     env = SubprocVecEnv(envs)
 
-    model = PPO.load("vec_model7")
+    model = PPO.load("m_360_0")
 
     model.set_env(env)
 
     model.learn(total_timesteps=4_000_000)
 
-    model.save("vec_model8")
+    model.save("m_360_1")

@@ -9,8 +9,8 @@ from gym import spaces
 
 
 class MyEnv(gym.Env):
-    def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=400,
-                 laser_range_max=10, laser_range_min=0.15, laser_noise=None, laser_update_rate=10):
+    def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=360,
+                 laser_range_max=10, laser_range_min=0.15, laser_noise=(0, 0.01), laser_update_rate=10):
 
         super(MyEnv, self).__init__()
 
@@ -32,23 +32,20 @@ class MyEnv(gym.Env):
         self.last_grid = [0, 0]
 
         self.tree_radius_range = (0.15, 0.55)
-        self.trees_per_grid = 70
-        self.trees_min_distance = 0.35
+        self.trees_per_grid_range = (30, 70)
+        self.trees_per_grid = int(random.uniform(self.trees_per_grid_range[0], self.trees_per_grid_range[1]))
+        self.trees_min_distance = 0.5
 
-        self.world_size_in_grids = np.array([-2, 4, -2, 2])
+        self.world_size_in_grids = np.array([-2, 3, -2, 2])
         self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
         self.trees_array = np.zeros(
             (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
              self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid, 3),
             dtype=np.float32)
-        self.trees_array_r = np.zeros(
-            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
-             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid),
-            dtype=np.float32)
 
-        self.current_grid = [-self.world_size_in_grids[0], -self.world_size_in_grids[2]]
-        self.mid_grid = self.current_grid.copy()
-        self.last_grid = self.current_grid.copy()
+        self.mid_grid = [0, 0]
+        self.current_grid = self.mid_grid.copy()
+        self.last_grid = self.mid_grid.copy()
 
         self.closest_trees = np.array([]).reshape(0, 3)
         self.closest_distance = np.array([]).reshape(0, 1)
@@ -124,9 +121,10 @@ class MyEnv(gym.Env):
         self.last_grid = self.current_grid
 
         if done:
-            if self.test:
-                self.reset()
             reward = c_reward
+            if self.test:
+                print("Reward", reward)
+                self.reset()
 
         self.current_step += 1
 
@@ -143,11 +141,11 @@ class MyEnv(gym.Env):
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
                 colision_reward += 0
-            if dist - tree[2] - 0.15 < 0:
+            if dist - tree[2] - self.laser_min_range < 0:
                 colision_reward += -2.0
                 break
 
-        speed_reward = 0.5 * self.drone.speed[0]
+        speed_reward = 0.6 * self.drone.speed[0]
 
         pos_y_offset_penalty = -0.04 * abs(self.drone.pos[1])
 
@@ -160,15 +158,14 @@ class MyEnv(gym.Env):
 
     def reset(self):
         self.drone.reset()
-        self.current_grid = [-self.world_size_in_grids[0], -self.world_size_in_grids[2]]
-        self.last_grid = self.current_grid.copy()
+        self.current_grid = self.mid_grid.copy()
+        self.last_grid = self.mid_grid.copy()
+
+        self.trees_per_grid = int(random.uniform(self.trees_per_grid_range[0], self.trees_per_grid_range[1]))
+
         self.trees_array = np.zeros(
             (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
              self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid, 3),
-            dtype=np.float32)
-        self.trees_array_r = np.zeros(
-            (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
-             self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid),
             dtype=np.float32)
 
         self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range, dtype=np.float32)
@@ -194,7 +191,7 @@ class MyEnv(gym.Env):
                 self.world_size[3]:
             return True, -10
 
-        if self.step_time * self.current_step > 60:
+        if self.step_time * self.current_step > 80:
             return True, -10
         return False, 0
 
