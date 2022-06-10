@@ -9,7 +9,7 @@ from gym import spaces
 
 
 class MyEnv(gym.Env):
-    def __init__(self, render, step_time, test=False, max_speed=1.5, max_acc_x=6.5, max_acc_y=6.5, laser_resolution=400,
+    def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=400,
                  laser_range_max=10, laser_range_min=0.15, laser_noise=None, laser_update_rate=10):
 
         super(MyEnv, self).__init__()
@@ -31,9 +31,9 @@ class MyEnv(gym.Env):
         self.current_grid = [0, 0]
         self.last_grid = [0, 0]
 
-        self.tree_radius_range = (0.25, 0.55)
-        self.trees_per_grid = 30
-        self.trees_min_distance = 1.2
+        self.tree_radius_range = (0.15, 0.55)
+        self.trees_per_grid = 70
+        self.trees_min_distance = 0.35
 
         self.world_size_in_grids = np.array([-2, 4, -2, 2])
         self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
@@ -137,20 +137,24 @@ class MyEnv(gym.Env):
         return ((self.laser_ranges.copy() - divider) / divider).astype(np.float32)
 
     def computeReward(self):
-        dist_margin = 0.5
+        dist_margin = 0.4
         colision_reward = 0
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
-                colision_reward = -1.5
+                colision_reward += 0
+            if dist - tree[2] - 0.15 < 0:
+                colision_reward += -2.0
                 break
 
-        speed_reward = 0.2 * self.drone.speed[0]
+        speed_reward = 0.5 * self.drone.speed[0]
+
+        pos_y_offset_penalty = -0.04 * abs(self.drone.pos[1])
 
         if speed_reward < 0:
             speed_reward *= 3
 
-        reward = colision_reward + speed_reward
+        reward = colision_reward + speed_reward + pos_y_offset_penalty
 
         return reward
 
@@ -190,7 +194,7 @@ class MyEnv(gym.Env):
                 self.world_size[3]:
             return True, -10
 
-        if self.step_time * self.current_step > 30:
+        if self.step_time * self.current_step > 60:
             return True, -10
         return False, 0
 
@@ -212,7 +216,7 @@ class MyEnv(gym.Env):
 
             radius = int(tree[2] * self.pixels_per_meter)
 
-            cv2.circle(background, pos_diff, radius, (60, 103, 155), -1)
+            cv2.circle(background, tuple(pos_diff), radius, (60, 103, 155), -1)
 
         for i in range(self.laser_resolution):
             A = int(self.laser_ranges[i] * self.pixels_per_meter * sin(i * self.laser_angle_per_step)) + \

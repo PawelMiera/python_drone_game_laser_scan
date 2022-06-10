@@ -5,7 +5,7 @@ import torch as th
 
 env = MyEnv(render=False, step_time=0.02, test=True, laser_noise=(0, 0.01))
 
-model = PPO.load("ppo8")
+model = PPO.load("vec_model7")
 
 obs = env.reset()
 for _ in range(4000):

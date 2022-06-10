@@ -34,11 +34,13 @@ class DroneState:
         self.speed = np.array([0, 0]).astype(np.float32)
         self.acc_x = 0.0
         self.acc_y = 0.0
-        self.acc_gain = 1.3
+        self.acc_gain = 1.0
         self.req_speed = np.array([0, 0]).astype(np.float32)
         self.step_time = step_time
 
         self.time = 0
+        self.last_req_speed = np.array([0,0])
+        self.req_speed_diff = np.array([0,0])
 
     def reset(self):
         self.pos = np.array([0, 0]).astype(np.float32)
@@ -49,7 +51,10 @@ class DroneState:
         self.req_speed = np.array([0, 0]).astype(np.float32)
 
     def make_step(self, req_speed):
+        self.req_speed_diff = req_speed - self.last_req_speed
         self.req_speed = np.multiply(req_speed, self.max_speed)
+
+        self.last_req_speed = req_speed
 
         speed_diff = self.req_speed - self.speed
 
