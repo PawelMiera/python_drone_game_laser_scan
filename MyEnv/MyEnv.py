@@ -32,18 +32,18 @@ class MyEnv(gym.Env):
         self.last_grid = [0, 0]
 
         self.tree_radius_range = (0.15, 0.55)
-        self.trees_per_grid_range = (30, 70)
+        self.trees_per_grid_range = (30, 60)
         self.trees_per_grid = int(random.uniform(self.trees_per_grid_range[0], self.trees_per_grid_range[1]))
-        self.trees_min_distance = 0.5
+        self.trees_min_distance = 0.8
 
-        self.world_size_in_grids = np.array([-2, 3, -2, 2])
+        self.world_size_in_grids = np.array([-2, 3, -2, 3])
         self.world_size = np.multiply(self.world_size_in_grids, self.grid_size)
         self.trees_array = np.zeros(
             (self.world_size_in_grids[1] - self.world_size_in_grids[0] + 2,
              self.world_size_in_grids[3] - self.world_size_in_grids[2] + 2, self.trees_per_grid, 3),
             dtype=np.float32)
 
-        self.mid_grid = [0, 0]
+        self.mid_grid = [-self.world_size_in_grids[0] + 1, -self.world_size_in_grids[2] + 1]
         self.current_grid = self.mid_grid.copy()
         self.last_grid = self.mid_grid.copy()
 
@@ -97,8 +97,8 @@ class MyEnv(gym.Env):
         current_time = self.step_time * self.current_step
 
         self.drone.make_step(actions)
-        self.current_grid = [int(self.drone.pos[0] / self.grid_size + self.mid_grid[0]),
-                             int(self.drone.pos[1] / self.grid_size + self.mid_grid[1])]
+        self.current_grid = [int(round(self.drone.pos[0] / self.grid_size + self.mid_grid[0])),
+                             int(round(self.drone.pos[1] / self.grid_size + self.mid_grid[1]))]
 
         if self.current_grid != self.last_grid:
             self.update_near_trees()
@@ -120,6 +120,9 @@ class MyEnv(gym.Env):
 
         self.last_grid = self.current_grid
 
+        if self.test and self.crash:
+            print("Crash")
+
         if done:
             reward = c_reward
             if self.test:
@@ -135,24 +138,30 @@ class MyEnv(gym.Env):
         return ((self.laser_ranges.copy() - divider) / divider).astype(np.float32)
 
     def computeReward(self):
-        dist_margin = 0.4
+        dist_margin = 0.25
         colision_reward = 0
+        min_dist = self.laser_max_range
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
-                colision_reward += 0
+                colision_reward += -0.25
             if dist - tree[2] - self.laser_min_range < 0:
-                colision_reward += -2.0
+                colision_reward = -2.8
+                min_dist = 0
                 break
 
-        speed_reward = 0.6 * self.drone.speed[0]
+            if dist - tree[2] < min_dist:
+                min_dist = dist
+        dist_reward = 0.0 * min_dist
 
-        pos_y_offset_penalty = -0.04 * abs(self.drone.pos[1])
+        speed_reward = 0.8 * self.drone.speed[0]
+
+        pos_y_offset_penalty = -0.12 * abs(self.drone.pos[1])
 
         if speed_reward < 0:
             speed_reward *= 3
 
-        reward = colision_reward + speed_reward + pos_y_offset_penalty
+        reward = colision_reward + speed_reward + pos_y_offset_penalty + dist_reward
 
         return reward
 
@@ -193,6 +202,7 @@ class MyEnv(gym.Env):
 
         if self.step_time * self.current_step > 80:
             return True, -10
+
         return False, 0
 
     def close(self):
@@ -303,6 +313,7 @@ class MyEnv(gym.Env):
 
                 min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=self.laser_max_range)
                 self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
+                self.crash = False
             else:
                 self.laser_ranges = np.full(self.laser_resolution, self.laser_min_range, dtype=np.float32)
                 self.crash = True

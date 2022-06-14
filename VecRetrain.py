@@ -28,10 +28,10 @@ if __name__ == '__main__':
     envs = [make_env(env_id, i) for i in range(num_cpu)]
     env = SubprocVecEnv(envs)
 
-    model = PPO.load("m_360_0")
+    model = PPO.load("m_360_60")
 
     model.set_env(env)
 
-    model.learn(total_timesteps=4_000_000)
+    model.learn(total_timesteps=3_000_000)
 
-    model.save("m_360_1")
+    model.save("m_360_61")

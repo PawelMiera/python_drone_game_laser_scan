@@ -1,7 +1,7 @@
 from stable_baselines3 import PPO
 
-filename = "vec_model6"
+filename = "m_360_61"
 
 model = PPO.load(filename)
 
-model.policy.save(filename + "_policy")
+model.policy.save(filename + "_policy.zip")

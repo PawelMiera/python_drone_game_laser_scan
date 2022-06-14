@@ -24,6 +24,6 @@ if __name__ == '__main__':
                          net_arch=[dict(pi=[128, 128], vf=[256, 256])])
 
     model = PPO('MlpPolicy', env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="tensorboard")
-    model.learn(total_timesteps=2_000_000)
+    model.learn(total_timesteps=5_000_000)
 
-    model.save("m_360_0")
+    model.save("m_360_81")
