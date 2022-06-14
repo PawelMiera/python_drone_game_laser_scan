@@ -10,7 +10,8 @@ from gym import spaces
 
 class MyEnv(gym.Env):
     def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=360,
-                 laser_range_max=10, laser_range_min=0.15, laser_noise=(0, 0.01), laser_update_rate=10):
+                 laser_range_max=10, laser_range_min=0.15, laser_noise=(0, 0.01), laser_disturbtion=True,
+                 laser_update_rate=10):
 
         super(MyEnv, self).__init__()
 
@@ -58,6 +59,7 @@ class MyEnv(gym.Env):
         self.laser_resolution = laser_resolution
         self.laser_angle_per_step = 2 * pi / self.laser_resolution
         self.laser_noise = laser_noise
+        self.laser_disturbtion = laser_disturbtion
         self.laser_last_update_time = 0
 
         self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range, dtype=np.float32)
@@ -91,7 +93,6 @@ class MyEnv(gym.Env):
 
         self.current_step = 0
         self.crash = False
-
 
     def step(self, actions):
         current_time = self.step_time * self.current_step
@@ -315,16 +316,24 @@ class MyEnv(gym.Env):
                 self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
                 self.crash = False
             else:
-                self.laser_ranges = np.full(self.laser_resolution, self.laser_min_range, dtype=np.float32)
+                self.laser_ranges = np.full(self.laser_resolution, 0, dtype=np.float32)
                 self.crash = True
                 break
 
+        inf_mask = self.laser_ranges == self.laser_max_range
+        not_inf_mask = np.logical_not(inf_mask)
         if self.laser_noise is not None and not self.crash:
-            noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=self.laser_resolution).astype(
+            noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=np.sum(not_inf_mask)).astype(
                 np.float32)
-            self.laser_ranges += noise
-            self.laser_ranges = np.minimum(self.laser_ranges, self.laser_max_range)
+            self.laser_ranges[not_inf_mask] += noise
             self.laser_ranges = np.maximum(self.laser_ranges, self.laser_min_range)
+
+        self.laser_ranges[self.laser_ranges == self.laser_max_range] = 0
+
+        if self.laser_disturbtion and not self.crash:
+            disturbtion_mask = np.random.choice(np.arange(self.laser_ranges.size), replace=False,
+                                       size=int(self.laser_ranges.size * 0.07))
+            self.laser_ranges[disturbtion_mask] = 0
 
 
     def update_near_trees(self):
