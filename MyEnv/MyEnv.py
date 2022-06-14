@@ -147,7 +147,7 @@ class MyEnv(gym.Env):
             if dist - tree[2] - dist_margin < 0:
                 colision_reward += -0.25
             if dist - tree[2] - self.laser_min_range < 0:
-                colision_reward = -2.8
+                colision_reward = -1
                 min_dist = 0
                 break
 
@@ -316,7 +316,7 @@ class MyEnv(gym.Env):
                 self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
                 self.crash = False
             else:
-                self.laser_ranges = np.full(self.laser_resolution, 0, dtype=np.float32)
+                self.laser_ranges = np.full(self.laser_resolution, self.laser_min_range, dtype=np.float32)
                 self.crash = True
                 break
 
@@ -328,11 +328,11 @@ class MyEnv(gym.Env):
             self.laser_ranges[not_inf_mask] += noise
             self.laser_ranges = np.maximum(self.laser_ranges, self.laser_min_range)
 
-        self.laser_ranges[self.laser_ranges == self.laser_max_range] = 0
+        self.laser_ranges[inf_mask] = 0
 
         if self.laser_disturbtion and not self.crash:
             disturbtion_mask = np.random.choice(np.arange(self.laser_ranges.size), replace=False,
-                                       size=int(self.laser_ranges.size * 0.07))
+                                       size=25)
             self.laser_ranges[disturbtion_mask] = 0
 
 
