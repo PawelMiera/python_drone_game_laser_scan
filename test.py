@@ -7,8 +7,6 @@ env = MyEnv(render=False, step_time=0.02, test=True, laser_noise=(0, 0.01))
 
 model = PPO.load("m_360_61.zip")
 
-model.policy.save("policy")
-
 obs = env.reset()
 for _ in range(8000):
     action, _states = model.predict(obs, deterministic=True)
