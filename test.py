@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 import torch as th
 
 
-env = MyEnv(render=False, step_time=0.02, test=True, laser_noise=(0, 0.01))
+env = MyEnv(render=False, step_time=0.02, test=True, laser_noise=(0, 0.01), laser_disturbtion=False)
 
 model = PPO.load("m_360_61.zip")
 

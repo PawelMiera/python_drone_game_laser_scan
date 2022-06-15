@@ -1,6 +1,7 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.callbacks import CheckpointCallback
 
 import torch as th
 from MyEnv.MyEnv import MyEnv
@@ -23,7 +24,11 @@ if __name__ == '__main__':
     policy_kwargs = dict(activation_fn=th.nn.ReLU,
                          net_arch=[dict(pi=[128, 128], vf=[256, 256])])
 
-    model = PPO('MlpPolicy', env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="tensorboard")
-    model.learn(total_timesteps=5_000_000)
+    checkpoint_callback = CheckpointCallback(save_freq=200000, save_path='models',
+                                             name_prefix='vec')
 
-    model.save("m_360_81")
+    model = PPO('MlpPolicy', env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="tensorboard")
+
+    model.learn(total_timesteps=3_000_000)
+
+    model.save("m_360_91")

@@ -94,6 +94,27 @@ class MyEnv(gym.Env):
         self.current_step = 0
         self.crash = False
 
+    def preprocess_lasers(self):
+        mask = np.isinf(self.laser_ranges)
+
+        data = self.laser_ranges.copy()
+
+        out_list = [np.array([data[self.laser_resolution-1], data[1]])]
+        for i in range(1, self.laser_resolution - 1):
+            curr = np.concatenate([data[i - 1:i], data[i+1:i + 2]])
+            out_list.append(curr)
+
+        out_list.append([data[self.laser_resolution-2], data[0]])
+
+        neighbours_closest_min = np.min(out_list, axis=1)
+
+        data[mask] = neighbours_closest_min[mask]
+
+        data = np.maximum(data, self.laser_min_range)
+        data = np.minimum(data, self.laser_max_range)
+
+        self.laser_ranges = data
+
     def step(self, actions):
         current_time = self.step_time * self.current_step
 
@@ -109,6 +130,8 @@ class MyEnv(gym.Env):
         if current_time - self.laser_last_update_time > self.laser_update_time:
             self.laser_last_update_time = current_time
             self.calculate_laser_distances()
+
+            self.preprocess_lasers()
 
         obs = self.get_obs()
 
@@ -141,19 +164,19 @@ class MyEnv(gym.Env):
     def computeReward(self):
         dist_margin = 0.25
         colision_reward = 0
-        min_dist = self.laser_max_range
+        # min_dist = self.laser_max_range
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
                 colision_reward += -0.25
             if dist - tree[2] - self.laser_min_range < 0:
-                colision_reward = -1
-                min_dist = 0
+                colision_reward = -1.5
+                # min_dist = 0
                 break
 
-            if dist - tree[2] < min_dist:
-                min_dist = dist
-        dist_reward = 0.0 * min_dist
+            # if dist - tree[2] < min_dist:
+            #     min_dist = dist
+        # dist_reward = 0.0 * min_dist
 
         speed_reward = 0.8 * self.drone.speed[0]
 
@@ -162,7 +185,7 @@ class MyEnv(gym.Env):
         if speed_reward < 0:
             speed_reward *= 3
 
-        reward = colision_reward + speed_reward + pos_y_offset_penalty + dist_reward
+        reward = colision_reward + speed_reward + pos_y_offset_penalty  # + dist_reward
 
         return reward
 
@@ -187,6 +210,9 @@ class MyEnv(gym.Env):
         self.get_closest_trees()
 
         self.calculate_laser_distances()
+
+        self.preprocess_lasers()
+
         self.laser_last_update_time = 0
         self.current_step = 0
         self.crash = False
@@ -253,7 +279,7 @@ class MyEnv(gym.Env):
         return np.logical_not(np.logical_and((s1 == s2), (s2 == s3)))
 
     def calculate_laser_distances(self):
-        self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range, dtype=np.float32)
+        self.laser_ranges = np.full(self.laser_resolution, np.inf, dtype=np.float32)
 
         trees_relative_pos = self.closest_trees[:, :2] - self.drone.pos
         trees_minus_relative_pos = -trees_relative_pos
@@ -309,10 +335,10 @@ class MyEnv(gym.Env):
                             dist_array_1[p] = d
                             dist_array_2[p] = d
                         except ValueError:
-                            dist_array_1[p] = self.laser_max_range
-                            dist_array_2[p] = self.laser_max_range
+                            dist_array_1[p] = np.inf
+                            dist_array_2[p] = np.inf
 
-                min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=self.laser_max_range)
+                min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=np.inf)
                 self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
                 self.crash = False
             else:
@@ -320,21 +346,15 @@ class MyEnv(gym.Env):
                 self.crash = True
                 break
 
-        inf_mask = self.laser_ranges == self.laser_max_range
-        not_inf_mask = np.logical_not(inf_mask)
         if self.laser_noise is not None and not self.crash:
-            noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=np.sum(not_inf_mask)).astype(
+            noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=self.laser_resolution).astype(
                 np.float32)
-            self.laser_ranges[not_inf_mask] += noise
-            self.laser_ranges = np.maximum(self.laser_ranges, self.laser_min_range)
-
-        self.laser_ranges[inf_mask] = 0
+            self.laser_ranges += noise
 
         if self.laser_disturbtion and not self.crash:
             disturbtion_mask = np.random.choice(np.arange(self.laser_ranges.size), replace=False,
-                                       size=25)
-            self.laser_ranges[disturbtion_mask] = 0
-
+                                                size=25)
+            self.laser_ranges[disturbtion_mask] = np.inf
 
     def update_near_trees(self):
         self.near_grid_trees = np.array([]).reshape(0, 3).astype(np.float32)

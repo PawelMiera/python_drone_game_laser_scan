@@ -1,8 +1,8 @@
-import inputs
+
 
 from MyEnv.MyEnv import MyEnv
 import time
-from inputs import get_gamepad
+
 import threading
 import math
 import numpy as np
