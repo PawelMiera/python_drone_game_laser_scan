@@ -260,11 +260,14 @@ class MyEnv(gym.Env):
             cv2.line(background, self.window_size_half, (A, B), (0, 0, 255), 1)
             cv2.circle(background, (A, B), 2, (0, 0, 255), -1)
 
-        drone_x_min = self.window_size_half[0] - 15
-        drone_y_min = self.window_size_half[1] - 10
-        background = cv2.rectangle(background, (drone_y_min, drone_x_min), (drone_y_min + 20, drone_x_min + 30),
+        drone_w = int(0.4 * self.pixels_per_meter)
+        drone_h = int(0.25 * self.pixels_per_meter)
+
+        drone_x_min = self.window_size_half[0] - int(drone_w/2)
+        drone_y_min = self.window_size_half[1] - int(drone_h/2)
+        background = cv2.rectangle(background, (drone_y_min, drone_x_min), (drone_y_min + drone_h, drone_x_min + drone_w),
                                    (0, 0, 0), -1)
-        background = cv2.rectangle(background, (drone_y_min, drone_x_min), (drone_y_min + 20, drone_x_min + 5),
+        background = cv2.rectangle(background, (drone_y_min, drone_x_min), (drone_y_min + drone_h, drone_x_min + int(drone_w/4)),
                                    (255, 0, 0), -1)
 
         cv2.imshow("game", background)
