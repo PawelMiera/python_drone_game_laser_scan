@@ -10,7 +10,7 @@ from gym import spaces
 
 class MyEnv(gym.Env):
     def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=360,
-                 laser_range_max=10, laser_range_min=0.15, laser_noise=(0, 0.01), laser_disturbtion=True,
+                 laser_range_max=6, laser_range_min=0.15, laser_noise=(0, 0.01), laser_disturbtion=False,
                  laser_update_rate=10):
 
         super(MyEnv, self).__init__()
@@ -24,7 +24,7 @@ class MyEnv(gym.Env):
 
         self.window_size = (1000, 1000)
         self.window_size_half = (int(self.window_size[0] / 2), int(self.window_size[1] / 2))
-        self.pixels_per_meter = 50
+        self.pixels_per_meter = 100
 
         """""""""""grids"""""""""""
         self.grid_size = 16
@@ -282,7 +282,7 @@ class MyEnv(gym.Env):
         return np.logical_not(np.logical_and((s1 == s2), (s2 == s3)))
 
     def calculate_laser_distances(self):
-        self.laser_ranges = np.full(self.laser_resolution, np.inf, dtype=np.float32)
+        self.laser_ranges = np.full(self.laser_resolution, self.laser_max_range, dtype=np.float32)
 
         trees_relative_pos = self.closest_trees[:, :2] - self.drone.pos
         trees_minus_relative_pos = -trees_relative_pos
@@ -304,60 +304,60 @@ class MyEnv(gym.Env):
                                                         cos_min)
 
             trees_r2 = np.square(self.closest_trees[:, 2])
-        self.crash = False
-        for i in range(len(self.closest_trees)):
-            if self.closest_distance[i] > self.closest_trees[i, 2]:
-                available_laser_tangents = self.laser_tangents.copy()
-                available_laser_tangents[angles_result[:, i]] = np.nan
-                b_l = trees_minus_relative_pos[i, 1] - (trees_minus_relative_pos[i, 0] * available_laser_tangents)
-                b2_l = np.square(b_l)
+            self.crash = False
+            for i in range(len(self.closest_trees)):
+                if self.closest_distance[i] > self.closest_trees[i, 2]:
+                    available_laser_tangents = self.laser_tangents.copy()
+                    available_laser_tangents[angles_result[:, i]] = np.nan
+                    b_l = trees_minus_relative_pos[i, 1] - (trees_minus_relative_pos[i, 0] * available_laser_tangents)
+                    b2_l = np.square(b_l)
 
-                b_q = np.multiply(self.laser_tangents_2, b_l)
-                c_q = b2_l - trees_r2[i]
+                    b_q = np.multiply(self.laser_tangents_2, b_l)
+                    c_q = b2_l - trees_r2[i]
 
-                d = np.square(b_q) - np.multiply(self.a_q * c_q, 4)
+                    d = np.square(b_q) - np.multiply(self.a_q * c_q, 4)
 
-                sqrt_d = np.sqrt(d)
+                    sqrt_d = np.sqrt(d)
 
-                x1 = (- b_q - sqrt_d) / self.a_q_2
-                x2 = (- b_q + sqrt_d) / self.a_q_2
+                    x1 = (- b_q - sqrt_d) / self.a_q_2
+                    x2 = (- b_q + sqrt_d) / self.a_q_2
 
-                y1 = self.laser_tangents * x1 + b_l
-                y2 = self.laser_tangents * x2 + b_l
+                    y1 = self.laser_tangents * x1 + b_l
+                    y2 = self.laser_tangents * x2 + b_l
 
-                p1 = np.stack((x1, y1), axis=1)
-                p2 = np.stack((x2, y2), axis=1)
+                    p1 = np.stack((x1, y1), axis=1)
+                    p2 = np.stack((x2, y2), axis=1)
 
-                dist_array_1 = np.sqrt(np.sum(np.square(p1 - trees_minus_relative_pos[i, :2]), axis=1))
-                dist_array_2 = np.sqrt(np.sum(np.square(p2 - trees_minus_relative_pos[i, :2]), axis=1))
-                for p in self.pi_2_positions:
-                    if not np.isnan(available_laser_tangents[p]):
-                        try:
-                            y = sqrt(trees_r2[i] - trees_minus_relative_pos[i, 0] * trees_minus_relative_pos[i, 0])
-                            d = min(abs(trees_minus_relative_pos[i, 1] - y), abs(trees_minus_relative_pos[i, 1] + y))
-                            dist_array_1[p] = d
-                            dist_array_2[p] = d
-                        except ValueError:
-                            dist_array_1[p] = np.inf
-                            dist_array_2[p] = np.inf
+                    dist_array_1 = np.sqrt(np.sum(np.square(p1 - trees_minus_relative_pos[i, :2]), axis=1))
+                    dist_array_2 = np.sqrt(np.sum(np.square(p2 - trees_minus_relative_pos[i, :2]), axis=1))
+                    for p in self.pi_2_positions:
+                        if not np.isnan(available_laser_tangents[p]):
+                            try:
+                                y = sqrt(trees_r2[i] - trees_minus_relative_pos[i, 0] * trees_minus_relative_pos[i, 0])
+                                d = min(abs(trees_minus_relative_pos[i, 1] - y), abs(trees_minus_relative_pos[i, 1] + y))
+                                dist_array_1[p] = d
+                                dist_array_2[p] = d
+                            except ValueError:
+                                dist_array_1[p] = self.laser_max_range
+                                dist_array_2[p] = self.laser_max_range
 
-                min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=np.inf)
-                self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
-                self.crash = False
-            else:
-                self.laser_ranges = np.full(self.laser_resolution, self.laser_min_range, dtype=np.float32)
-                self.crash = True
-                break
+                    min_dist = np.nan_to_num(np.minimum(dist_array_1, dist_array_2), nan=self.laser_max_range)
+                    self.laser_ranges = np.minimum(min_dist, self.laser_ranges)
+                    self.crash = False
+                else:
+                    self.laser_ranges = np.full(self.laser_resolution, self.laser_min_range, dtype=np.float32)
+                    self.crash = True
+                    break
 
-        if self.laser_noise is not None and not self.crash:
-            noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=self.laser_resolution).astype(
-                np.float32)
-            self.laser_ranges += noise
+            if self.laser_noise is not None and not self.crash:
+                noise = np.random.normal(self.laser_noise[0], self.laser_noise[1], size=self.laser_resolution).astype(
+                    np.float32)
+                self.laser_ranges += noise
 
-        if self.laser_disturbtion and not self.crash:
-            disturbtion_mask = np.random.choice(np.arange(self.laser_ranges.size), replace=False,
-                                                size=25)
-            self.laser_ranges[disturbtion_mask] = np.inf
+            if self.laser_disturbtion and not self.crash:
+                disturbtion_mask = np.random.choice(np.arange(self.laser_ranges.size), replace=False,
+                                                    size=25)
+                self.laser_ranges[disturbtion_mask] = self.laser_max_range
 
     def update_near_trees(self):
         self.near_grid_trees = np.array([]).reshape(0, 3).astype(np.float32)

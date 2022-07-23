@@ -23,13 +23,13 @@ class ManualControl:
         self.main()
 
     def main(self):
-        env = MyEnv(render=True, step_time=0.02, laser_noise=(0, 0.05))
+        env = MyEnv(render=True, step_time=0.02, laser_noise=None)
         start = time.time()
         i = 0
         data = []
         while i < 1000:
-            if i < 300:
-                env.step([0, 1])
+            if i < 1100:
+                env.step([0, 0])
             else:
                 env.step([0, -1])
             #print(env.drone)
