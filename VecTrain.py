@@ -6,16 +6,19 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 import torch as th
 from MyEnv.MyEnv import MyEnv
 
+
 def make_env(env_id, rank, seed=0):
     def _init():
         env = MyEnv(render=False, step_time=0.02, laser_noise=(0, 0.01))
 
         return env
+
     set_random_seed(seed)
     return _init
 
+
 if __name__ == '__main__':
-    env_id = "CartPole-v1"
+    env_id = "Drone"
     num_cpu = 40  # Number of processes to use
     # Create the vectorized environment
     envs = [make_env(env_id, i) for i in range(num_cpu)]
@@ -31,4 +34,4 @@ if __name__ == '__main__':
 
     model.learn(total_timesteps=3_000_000)
 
-    model.save("m_360_91")
+    model.save("m_360")

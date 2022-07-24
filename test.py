@@ -14,4 +14,5 @@ for _ in range(8000):
     env.render()
 
     if dones:
-        env.reset()
+        obs = env.reset()
+

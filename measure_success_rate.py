@@ -28,7 +28,7 @@ while current_run < number_of_runs:
         elif rewards == -10:
             out += 1
 
-        env.reset()
+        obs = env.reset()
 
         current_run += 1
 
