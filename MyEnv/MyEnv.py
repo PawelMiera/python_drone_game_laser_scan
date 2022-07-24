@@ -9,22 +9,22 @@ from gym import spaces
 
 
 class MyEnv(gym.Env):
-    def __init__(self, render, step_time, test=False, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=360,
+    def __init__(self, render, step_time, max_speed=1, max_acc_x=0.6, max_acc_y=0.6, laser_resolution=360,
                  laser_range_max=6, laser_range_min=0.15, laser_noise=(0, 0.01), laser_disturbtion=False,
-                 laser_update_rate=10):
+                 laser_update_rate=10, collision_is_crash=False):
 
         super(MyEnv, self).__init__()
 
         """""""""""sim"""""""""""
         self.do_render = render
         self.step_time = step_time
-        self.test = test
+        self.collision_is_crash = collision_is_crash
 
         self.drone = DroneState(max_speed=max_speed, max_acc_x=max_acc_x, max_acc_y=max_acc_y, step_time=step_time)
 
         self.window_size = (1000, 1000)
         self.window_size_half = (int(self.window_size[0] / 2), int(self.window_size[1] / 2))
-        self.pixels_per_meter = 100
+        self.pixels_per_meter = 80
 
         """""""""""grids"""""""""""
         self.grid_size = 16
@@ -144,14 +144,8 @@ class MyEnv(gym.Env):
 
         self.last_grid = self.current_grid
 
-        if self.test and self.crash:
-            print("Crash")
-
         if done:
             reward = c_reward
-            if self.test:
-                print("Reward", reward)
-                self.reset()
 
         self.current_step += 1
 
@@ -230,6 +224,9 @@ class MyEnv(gym.Env):
         if self.step_time * self.current_step > 80:
             return True, -10
 
+        if self.collision_is_crash and self.crash:
+            return True, -12
+
         return False, 0
 
     def close(self):
@@ -271,7 +268,8 @@ class MyEnv(gym.Env):
                                    (255, 0, 0), -1)
 
         cv2.imshow("game", background)
-        cv2.waitKey(1)
+        if cv2.waitKey(1) == ord("s"):
+            cv2.imwrite("drone_game.jpg", background)
 
     def are_angles_not_between(self, angles_sin, angles_cos, max_sin, max_cos, min_sin, min_cos):
 
