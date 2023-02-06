@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 
 env = MyEnv(render=False, step_time=0.02, laser_noise=None, collision_is_crash=True)
 
-model = PPO.load("models/n_retrain_100000_steps.zip")
+model = PPO.load("models/new_new_best.zip")
 
 obs = env.reset()
 

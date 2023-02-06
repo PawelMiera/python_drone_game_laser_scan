@@ -27,13 +27,13 @@ class MyEnv(gym.Env):
         self.pixels_per_meter = 80
 
         """""""""""grids"""""""""""
-        self.grid_size = 16
+        self.grid_size = 10
         self.grid_size_half = self.grid_size / 2
         self.current_grid = [0, 0]
         self.last_grid = [0, 0]
 
         self.tree_radius_range = (0.15, 0.55)
-        self.trees_per_grid_range = (30, 60)
+        self.trees_per_grid_range = (9, 17)
         self.trees_per_grid = int(random.uniform(self.trees_per_grid_range[0], self.trees_per_grid_range[1]))
         self.trees_min_distance = 0.5
 
@@ -161,19 +161,19 @@ class MyEnv(gym.Env):
         for tree in self.closest_trees:
             dist = self.calculate_distance(self.drone.pos, tree[:2])
             if dist - tree[2] - dist_margin < 0:
-                colision_reward += -0.25
-            if dist - tree[2] - self.laser_min_range < 0:
-                colision_reward = -1.5
-
+                colision_reward = -15.0
                 break
+            # if dist - tree[2] - self.laser_min_range < 0:
+            #     colision_reward = -6
+
 
             # if dist - tree[2] < min_dist:
             #     min_dist = dist
         # dist_reward = 0.0 * min_dist
 
-        speed_reward = 0.8 * self.drone.speed[0]
+        speed_reward = 2.5 * self.drone.speed[0]
 
-        pos_y_offset_penalty = -0.1 * abs(self.drone.pos[1])
+        pos_y_offset_penalty = -0.45 * abs(self.drone.pos[1])
 
         if speed_reward < 0:
             speed_reward *= 3
@@ -181,6 +181,7 @@ class MyEnv(gym.Env):
         reward = colision_reward + speed_reward + pos_y_offset_penalty  # + dist_reward
 
         return reward
+
 
     def reset(self):
         self.drone.reset()
@@ -220,8 +221,8 @@ class MyEnv(gym.Env):
                 self.world_size[3]:
             return True, -10
 
-        if self.step_time * self.current_step > 80:
-            return True, -10
+        if self.step_time * self.current_step > 40:
+            return True, -11
 
         if self.collision_is_crash and self.crash:
             return True, -12
